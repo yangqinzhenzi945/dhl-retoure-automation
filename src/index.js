@@ -12,10 +12,33 @@ import {
   outputPathFor,
   parseShipmentResult,
   rowToRecord,
+  validateRecord,
 } from "./helpers.js";
 
 const FORM_URL = "https://geschaeftskunden.dhl.de/content/dhl-rpi/gw/rpcustomerweb/OrderCustService.action";
 const RESULT_SUCCESS = "Ihre Retourensendung wurde erfolgreich beauftragt!";
+const ERROR_SHEET_NAME = "自动化错误记录";
+
+function ensureErrorSheet(workbook) {
+  const sheet = workbook.getWorksheet(ERROR_SHEET_NAME) ?? workbook.addWorksheet(ERROR_SHEET_NAME);
+  if (sheet.rowCount === 0) {
+    sheet.addRow(["时间", "Excel 行号", "Sendungsreferenz", "Kundenreferenz", "错误类型", "错误详情"]);
+    sheet.getRow(1).font = { bold: true };
+    sheet.columns = [18, 12, 22, 28, 18, 70].map((width) => ({ width }));
+  }
+  return sheet;
+}
+
+function addError(errorSheet, record, type, details) {
+  errorSheet.addRow([
+    new Date().toLocaleString("zh-CN", { hour12: false }),
+    record.excelRow,
+    record.shipmentReference,
+    record.customerReference,
+    type,
+    details,
+  ]);
+}
 
 function parseArguments(argv) {
   const args = { input: "", output: "", dryRun: false, overwrite: false, headless: false };
@@ -115,6 +138,7 @@ async function main() {
     const sheet = workbook.worksheets[0];
     if (!sheet) throw new Error("Excel 中没有工作表。");
     const columns = headerMap(sheet.getRow(1));
+    const errorSheet = ensureErrorSheet(workbook);
     let trackingColumn = columns.get(TRACKING_HEADER);
     if (!trackingColumn) {
       trackingColumn = 12;
@@ -126,8 +150,8 @@ async function main() {
     const pending = [];
     for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber += 1) {
       const row = sheet.getRow(rowNumber);
-      const reference = asText(row.getCell(columns.get("Sendungsreferenz")).value);
-      if (!reference) continue;
+      const hasAnyInput = [...columns.values()].some((column) => asText(row.getCell(column).value));
+      if (!hasAnyInput) continue;
       if (asText(row.getCell(trackingColumn).value)) continue;
       pending.push(rowToRecord(row, columns));
     }
@@ -157,25 +181,54 @@ async function main() {
     const pages = context.pages();
     const page = pages[0] ?? (await context.newPage());
     let frame = await waitForDhlForm(page);
+    let successCount = 0;
+    let errorCount = 0;
 
     for (let index = 0; index < pending.length; index += 1) {
       const record = pending[index];
-      console.log(`[${index + 1}/${pending.length}] ${record.customerReference}`);
-      frame = await openBlankOrder(page, frame);
-      const submit = await fillOrder(page, frame, record);
-      if (args.dryRun) {
-        console.log("试运行完成：第一条已填好，尚未点击 Retoure beauftragen。");
-        await terminal.question("检查浏览器后按 Enter 关闭脚本。");
-        return;
+      console.log(`[${index + 1}/${pending.length}] Excel 第 ${record.excelRow} 行：${record.customerReference || "（无客户参考号）"}`);
+      const validationErrors = validateRecord(record);
+      if (validationErrors.length) {
+        addError(errorSheet, record, "数据校验失败", validationErrors.join("；"));
+        errorCount += 1;
+        await workbook.xlsx.writeFile(outputPath);
+        console.error(`  ✗ 已跳过：${validationErrors.join("；")}`);
+        continue;
       }
-      const shipmentNumber = await submitAndRead(page, frame, submit, record);
-      const cell = sheet.getCell(record.excelRow, trackingColumn);
-      cell.value = Number(shipmentNumber);
-      cell.numFmt = "0";
-      await workbook.xlsx.writeFile(outputPath);
-      console.log(`  ✓ Sendungsnummer ${shipmentNumber}，进度已保存`);
+      try {
+        frame = await openBlankOrder(page, frame);
+        const submit = await fillOrder(page, frame, record);
+        if (args.dryRun) {
+          console.log("试运行完成：第一条有效记录已填好，尚未点击 Retoure beauftragen。");
+          await terminal.question("检查浏览器后按 Enter 关闭脚本。");
+          return;
+        }
+        const shipmentNumber = await submitAndRead(page, frame, submit, record);
+        const cell = sheet.getCell(record.excelRow, trackingColumn);
+        cell.value = Number(shipmentNumber);
+        cell.numFmt = "0";
+        successCount += 1;
+        await workbook.xlsx.writeFile(outputPath);
+        console.log(`  ✓ Sendungsnummer ${shipmentNumber}，进度已保存`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const type = message.includes("Sendungsnummer") ? "未取得运单号" : "网页处理失败";
+        addError(errorSheet, record, type, message);
+        errorCount += 1;
+        await workbook.xlsx.writeFile(outputPath);
+        console.error(`  ✗ ${message}（已写入错误记录，继续下一行）`);
+        try {
+          await page.goto(FORM_URL, { waitUntil: "domcontentloaded" });
+          frame = await waitForDhlForm(page);
+        } catch {
+          console.error("  无法恢复 DHL 表单，停止后续处理。已完成的进度和错误记录均已保存。");
+          break;
+        }
+      }
     }
-    console.log(`\n全部完成：${outputPath}`);
+    console.log(`\n处理结束：成功 ${successCount} 行，报错 ${errorCount} 行。`);
+    console.log(`结果文件：${outputPath}`);
+    if (errorCount) console.log(`请打开 Excel 的“${ERROR_SHEET_NAME}”工作表查看详情。`);
   } finally {
     terminal.close();
     if (context) await context.close();
