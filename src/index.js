@@ -65,11 +65,21 @@ async function waitForDhlForm(page) {
   console.log("\n请在打开的 Chrome 中登录 DHL。登录后脚本会自动继续。\n");
   const deadline = Date.now() + 10 * 60 * 1000;
   while (Date.now() < deadline) {
-    const frame = page.frames().find((candidate) => candidate.url().includes("OrderCustService.action"));
-    if (frame && (await frame.getByText("Retoure beauftragen", { exact: true }).count())) return frame;
+    for (const frame of page.frames()) {
+      const referenceField = frame
+        .locator('input[name="shipmentReference"], input[name$="shipmentReference"], input[id*="shipmentReference" i]')
+        .or(frame.getByLabel(/Sendungsreferenz/i));
+      if (await referenceField.first().isVisible().catch(() => false)) return frame;
+    }
     await page.waitForTimeout(1000);
   }
-  throw new Error("等待 DHL 登录超时（10 分钟）。");
+  throw new Error("等待 DHL 表单超时（10 分钟）。请确认已经登录并打开“Retoure beauftragen”页面。");
+}
+
+async function field(frame, label, selectors) {
+  const locator = frame.locator(selectors).or(frame.getByLabel(label)).first();
+  await locator.waitFor({ state: "visible", timeout: 30000 });
+  return locator;
 }
 
 async function openBlankOrder(page, frame) {
@@ -83,16 +93,17 @@ async function openBlankOrder(page, frame) {
 }
 
 async function fillOrder(page, frame, record) {
-  await frame.locator('input[name="shipmentReference"]').fill(record.shipmentReference);
-  await frame.locator('input[name="customerReference"]').fill(record.customerReference);
-  await frame.locator('input[name="address.sender.name1"]').fill(record.name1);
-  await frame.locator('input[name="address.sender.name2"]').fill(record.name2);
-  await frame.locator('input[name="address.sender.name3"]').fill(record.name3);
-  await frame.locator('input[name="address.sender.plz"]').fill(record.postalCode);
-  await frame.locator('input[name="address.sender.city"]').fill(record.city);
-  await frame.locator('input[name="address.sender.street"]').fill(record.street);
-  await frame.locator('input[name="address.sender.streetNumber"]').fill(record.streetNumber);
-  await frame.locator('input[name="address.sender.email"]').fill(record.email);
+  const shipmentReference = await field(frame, /Sendungsreferenz/i, 'input[name="shipmentReference"], input[name$="shipmentReference"], input[id*="shipmentReference" i]');
+  await shipmentReference.fill(record.shipmentReference);
+  await (await field(frame, /Kundenreferenz/i, 'input[name="customerReference"], input[name$="customerReference"], input[id*="customerReference" i]')).fill(record.customerReference);
+  await (await field(frame, /Vor-?\s*und Nachname/i, 'input[name="address.sender.name1"], input[name$="sender.name1"], input[id*="name1" i]')).fill(record.name1);
+  await (await field(frame, /Namenszusatz 1/i, 'input[name="address.sender.name2"], input[name$="sender.name2"], input[id*="name2" i]')).fill(record.name2);
+  await (await field(frame, /Namenszusatz 2/i, 'input[name="address.sender.name3"], input[name$="sender.name3"], input[id*="name3" i]')).fill(record.name3);
+  await (await field(frame, /^PLZ/i, 'input[name="address.sender.plz"], input[name$="sender.plz"], input[id*="plz" i]')).fill(record.postalCode);
+  await (await field(frame, /^Ort/i, 'input[name="address.sender.city"], input[name$="sender.city"], input[id*="city" i]')).fill(record.city);
+  await (await field(frame, /Straße|Strasse/i, 'input[name="address.sender.street"], input[name$="sender.street"], input[id*="street" i]')).fill(record.street);
+  await (await field(frame, /Hausnummer|Nr\.?$/i, 'input[name="address.sender.streetNumber"], input[name$="sender.streetNumber"], input[id*="streetNumber" i]')).fill(record.streetNumber);
+  await (await field(frame, /E-?Mail/i, 'input[name="address.sender.email"], input[name$="sender.email"], input[id*="email" i]')).fill(record.email);
 
   await frame.locator("#receiverSelect").click();
   await frame.getByText(record.receiver, { exact: true }).click();
@@ -105,7 +116,7 @@ async function fillOrder(page, frame, record) {
   }
   if (await goGreenPlus.isChecked()) throw new Error("GoGreen Plus 无法取消勾选。");
 
-  const actualReference = await frame.locator('input[name="shipmentReference"]').inputValue();
+  const actualReference = await shipmentReference.inputValue();
   if (actualReference !== record.shipmentReference) throw new Error("网页发送参考号与 Excel 不一致。");
   const submit = frame.getByRole("button", { name: "Retoure beauftragen", exact: true });
   if (!(await submit.isEnabled())) throw new Error("DHL 提交按钮不可用，请检查必填字段。");
@@ -217,12 +228,14 @@ async function main() {
         errorCount += 1;
         await workbook.xlsx.writeFile(outputPath);
         console.error(`  ✗ ${message}（已写入错误记录，继续下一行）`);
-        try {
-          await page.goto(FORM_URL, { waitUntil: "domcontentloaded" });
-          frame = await waitForDhlForm(page);
-        } catch {
-          console.error("  无法恢复 DHL 表单，停止后续处理。已完成的进度和错误记录均已保存。");
-          break;
+        const formStillVisible = await frame.getByLabel(/Sendungsreferenz/i).first().isVisible().catch(() => false);
+        if (!formStillVisible) {
+          try {
+            frame = await waitForDhlForm(page);
+          } catch {
+            console.error("  无法恢复 DHL 表单，停止后续处理。已完成的进度和错误记录均已保存。");
+            break;
+          }
         }
       }
     }
