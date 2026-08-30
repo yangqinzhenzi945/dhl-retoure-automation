@@ -60,7 +60,10 @@ export function headerMap(headerRow) {
 }
 
 export function rowToRecord(row, columns) {
-  const read = (header) => asText(row.getCell(columns.get(header)).value);
+  const read = (header) => {
+    const column = columns.get(header);
+    return column ? asText(row.getCell(column).value) : "";
+  };
   return {
     excelRow: row.number,
     shipmentReference: read("Sendungsreferenz"),
