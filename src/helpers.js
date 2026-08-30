@@ -11,7 +11,7 @@ export const REQUIRED_HEADERS = [
   "STRASSE",
   "NR",
   "E-MAIL ADRESSE DES KUNDEN",
-  "Retouren-Empf盲nger",
+  "Retouren-Empfänger",
 ];
 
 export const TRACKING_HEADER = "Sendungsnummer";
@@ -34,7 +34,7 @@ export function headerMap(headerRow) {
     if (title) map.set(title, column);
   });
   const missing = REQUIRED_HEADERS.filter((header) => !map.has(header));
-  if (missing.length) throw new Error(`Excel 缂哄皯蹇呴渶鍒楋細${missing.join("銆?)}`);
+  if (missing.length) throw new Error(`Excel 缺少必需列：${missing.join("、")}`);
   return map;
 }
 
@@ -52,13 +52,13 @@ export function rowToRecord(row, columns) {
     street: read("STRASSE"),
     streetNumber: read("NR"),
     email: read("E-MAIL ADRESSE DES KUNDEN"),
-    receiver: read("Retouren-Empf盲nger"),
+    receiver: read("Retouren-Empfänger"),
   };
 }
 
 export function outputPathFor(inputPath) {
   const parsed = path.parse(inputPath);
-  return path.join(parsed.dir, `${parsed.name}_宸插～鍐欒繍鍗曞彿${parsed.ext || ".xlsx"}`);
+  return path.join(parsed.dir, `${parsed.name}_已填写运单号${parsed.ext || ".xlsx"}`);
 }
 
 export function parseShipmentResult(text) {
