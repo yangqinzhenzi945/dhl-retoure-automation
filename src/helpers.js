@@ -4,8 +4,6 @@ export const REQUIRED_HEADERS = [
   "Sendungsreferenz",
   "KUNDENREFERENZ / AUF LABEL ANZEIGEN",
   "VOR-UND NACHNAME",
-  "NAMENSZUSATZ 1",
-  "NAMENSZUSATZ 2",
   "PLZ",
   "ORT",
   "STRASSE",
@@ -24,7 +22,30 @@ export function asText(value) {
 
 export function normalizePostalCode(value) {
   const text = asText(value).replace(/\.0$/, "");
-  return text.padStart(5, "0");
+  if (!text) return "";
+  return /^\d{4}$/.test(text) ? `0${text}` : text;
+}
+
+export const REQUIRED_RECORD_FIELDS = [
+  ["shipmentReference", "Sendungsreferenz"],
+  ["customerReference", "KUNDENREFERENZ / AUF LABEL ANZEIGEN"],
+  ["name1", "VOR-UND NACHNAME"],
+  ["postalCode", "PLZ"],
+  ["city", "ORT"],
+  ["street", "STRASSE"],
+  ["streetNumber", "NR"],
+  ["email", "E-MAIL ADRESSE DES KUNDEN"],
+  ["receiver", "Retouren-Empfänger"],
+];
+
+export function validateRecord(record) {
+  const errors = REQUIRED_RECORD_FIELDS
+    .filter(([field]) => !asText(record[field]))
+    .map(([, label]) => `${label} 为空`);
+  if (record.postalCode && !/^\d{5}$/.test(record.postalCode)) {
+    errors.push(`PLZ 必须是 5 位数字（当前值：${record.postalCode}）`);
+  }
+  return errors;
 }
 
 export function headerMap(headerRow) {
