@@ -1,0 +1,22 @@
+{
+  "name": "dhl-retoure-automation",
+  "version": "1.0.0",
+  "private": false,
+  "description": "浠?Excel 鎵归噺鍒涘缓 DHL Gesch盲ftskundenportal 閫€璐ф爣绛惧苟鍥炲啓 Sendungsnummer",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "check": "node --check src/index.js && node --check src/helpers.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "playwright": "^1.55.0"
+  },
+  "license": "MIT"
+}
+
