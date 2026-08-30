@@ -2,7 +2,7 @@
   "name": "dhl-retoure-automation",
   "version": "1.0.0",
   "private": false,
-  "description": "浠?Excel 鎵归噺鍒涘缓 DHL Gesch盲ftskundenportal 閫€璐ф爣绛惧苟鍥炲啓 Sendungsnummer",
+  "description": "从 Excel 批量创建 DHL Geschäftskundenportal 退货标签并回写 Sendungsnummer",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
