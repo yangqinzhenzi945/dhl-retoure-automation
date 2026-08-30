@@ -27,26 +27,26 @@ function parseArguments(argv) {
     else if (value === "--overwrite") args.overwrite = true;
     else if (value === "--headless") args.headless = true;
     else if (!value.startsWith("--") && !args.input) args.input = value;
-    else throw new Error(`鏈煡鍙傛暟锛?{value}`);
+    else throw new Error(`未知参数：${value}`);
   }
   return args;
 }
 
 async function askForInput(terminal) {
-  const answer = await terminal.question("璇锋嫋鍏?Excel 鏂囦欢骞舵寜 Enter锛歕n> ");
+  const answer = await terminal.question("请拖入 Excel 文件并按 Enter：\n> ");
   return answer.trim().replace(/^"|"$/g, "");
 }
 
 async function waitForDhlForm(page) {
   await page.goto(FORM_URL, { waitUntil: "domcontentloaded" });
-  console.log("\n璇峰湪鎵撳紑鐨?Chrome 涓櫥褰?DHL銆傜櫥褰曞悗鑴氭湰浼氳嚜鍔ㄧ户缁€俓n");
+  console.log("\n请在打开的 Chrome 中登录 DHL。登录后脚本会自动继续。\n");
   const deadline = Date.now() + 10 * 60 * 1000;
   while (Date.now() < deadline) {
     const frame = page.frames().find((candidate) => candidate.url().includes("OrderCustService.action"));
     if (frame && (await frame.getByText("Retoure beauftragen", { exact: true }).count())) return frame;
     await page.waitForTimeout(1000);
   }
-  throw new Error("绛夊緟 DHL 鐧诲綍瓒呮椂锛?0 鍒嗛挓锛夈€?);
+  throw new Error("等待 DHL 登录超时（10 分钟）。");
 }
 
 async function openBlankOrder(page, frame) {
@@ -80,12 +80,12 @@ async function fillOrder(page, frame, record) {
     await frame.locator('label[for="goGreenPlusEnabled"]').click();
     await page.waitForTimeout(100);
   }
-  if (await goGreenPlus.isChecked()) throw new Error("GoGreen Plus 鏃犳硶鍙栨秷鍕鹃€夈€?);
+  if (await goGreenPlus.isChecked()) throw new Error("GoGreen Plus 无法取消勾选。");
 
   const actualReference = await frame.locator('input[name="shipmentReference"]').inputValue();
-  if (actualReference !== record.shipmentReference) throw new Error("缃戦〉鍙戦€佸弬鑰冨彿涓?Excel 涓嶄竴鑷淬€?);
+  if (actualReference !== record.shipmentReference) throw new Error("网页发送参考号与 Excel 不一致。");
   const submit = frame.getByRole("button", { name: "Retoure beauftragen", exact: true });
-  if (!(await submit.isEnabled())) throw new Error("DHL 鎻愪氦鎸夐挳涓嶅彲鐢紝璇锋鏌ュ繀濉瓧娈点€?);
+  if (!(await submit.isEnabled())) throw new Error("DHL 提交按钮不可用，请检查必填字段。");
   return submit;
 }
 
@@ -94,9 +94,9 @@ async function submitAndRead(page, frame, submit, record) {
   await submit.click();
   await frame.getByText(RESULT_SUCCESS, { exact: false }).waitFor({ state: "visible", timeout: 30000 });
   const result = parseShipmentResult(await frame.locator("body").innerText());
-  if (!result.shipmentNumber) throw new Error("缁撴灉椤垫病鏈夋壘鍒?Sendungsnummer銆?);
+  if (!result.shipmentNumber) throw new Error("结果页没有找到 Sendungsnummer。");
   if (result.customerReference !== record.customerReference) {
-    throw new Error(`缁撴灉椤靛鎴峰弬鑰冨彿涓嶄竴鑷达細${result.customerReference}`);
+    throw new Error(`结果页客户参考号不一致：${result.customerReference}`);
   }
   return result.shipmentNumber;
 }
@@ -113,7 +113,7 @@ async function main() {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(inputPath);
     const sheet = workbook.worksheets[0];
-    if (!sheet) throw new Error("Excel 涓病鏈夊伐浣滆〃銆?);
+    if (!sheet) throw new Error("Excel 中没有工作表。");
     const columns = headerMap(sheet.getRow(1));
     let trackingColumn = columns.get(TRACKING_HEADER);
     if (!trackingColumn) {
@@ -132,17 +132,17 @@ async function main() {
       pending.push(rowToRecord(row, columns));
     }
     if (!pending.length) {
-      console.log("娌℃湁寰呭鐞嗚锛歀 鍒楀凡鏈夎繍鍗曞彿锛屾垨琛ㄦ牸娌℃湁鏁版嵁銆?);
+      console.log("没有待处理行：L 列已有运单号，或表格没有数据。");
       return;
     }
 
-    console.log(`杈撳叆鏂囦欢锛?{inputPath}`);
-    console.log(`杈撳嚭鏂囦欢锛?{outputPath}`);
-    console.log(`寰呭垱寤猴細${pending.length} 寮犻€€璐ф爣绛綻);
+    console.log(`输入文件：${inputPath}`);
+    console.log(`输出文件：${outputPath}`);
+    console.log(`待创建：${pending.length} 张退货标签`);
     if (!args.dryRun) {
-      const answer = await terminal.question("杩欎細鍒涘缓鐪熷疄 DHL 閫€璐у鎵樸€傝杈撳叆 CREATE 缁х画锛?);
+      const answer = await terminal.question("这会创建真实 DHL 退货委托。请输入 CREATE 继续：");
       if (answer.trim() !== "CREATE") {
-        console.log("宸插彇娑堬紝鏈垱寤轰换浣曟爣绛俱€?);
+        console.log("已取消，未创建任何标签。");
         return;
       }
     }
@@ -164,8 +164,8 @@ async function main() {
       frame = await openBlankOrder(page, frame);
       const submit = await fillOrder(page, frame, record);
       if (args.dryRun) {
-        console.log("璇曡繍琛屽畬鎴愶細绗竴鏉″凡濉ソ锛屽皻鏈偣鍑?Retoure beauftragen銆?);
-        await terminal.question("妫€鏌ユ祻瑙堝櫒鍚庢寜 Enter 鍏抽棴鑴氭湰銆?);
+        console.log("试运行完成：第一条已填好，尚未点击 Retoure beauftragen。");
+        await terminal.question("检查浏览器后按 Enter 关闭脚本。");
         return;
       }
       const shipmentNumber = await submitAndRead(page, frame, submit, record);
@@ -173,9 +173,9 @@ async function main() {
       cell.value = Number(shipmentNumber);
       cell.numFmt = "0";
       await workbook.xlsx.writeFile(outputPath);
-      console.log(`  鉁?Sendungsnummer ${shipmentNumber}锛岃繘搴﹀凡淇濆瓨`);
+      console.log(`  ✓ Sendungsnummer ${shipmentNumber}，进度已保存`);
     }
-    console.log(`\n鍏ㄩ儴瀹屾垚锛?{outputPath}`);
+    console.log(`\n全部完成：${outputPath}`);
   } finally {
     terminal.close();
     if (context) await context.close();
@@ -183,7 +183,7 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(`\n澶辫触锛?{error.message}`);
+  console.error(`\n失败：${error.message}`);
   process.exitCode = 1;
 });
 
