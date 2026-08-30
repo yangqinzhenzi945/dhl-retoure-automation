@@ -9,6 +9,8 @@
 - 登录会话保存在当前电脑用户目录的 `.dhl-retoure-automation/chrome-profile` 中。
 - 已有 `Sendungsnummer` 的行会自动跳过，支持中断后继续。
 - 每成功创建一单就立即保存 Excel，减少中断导致的数据丢失。
+- 单行数据有误时会跳过该行、继续处理后续行，并在输出文件的 `自动化错误记录` 工作表中写明原因。
+- DHL 提交后未返回 `Sendungsnummer` 时，也会作为 `未取得运单号` 记录。
 - 如果之后有DHL页面结构变化，那我们需要重新更新。
 
 ## 环境要求
@@ -36,6 +38,10 @@
 | E-MAIL ADRESSE DES KUNDEN | Kunden-E-Mail |
 | Retouren-Empfänger | DHL 账户中的收件方名称（如有新收件方，需要联系DHL添加哦） |
 | Sendungsnummer | 输出列；没有时自动创建为 L 列 |
+
+以下字段每一行都必须填写：`Sendungsreferenz`、`KUNDENREFERENZ / AUF LABEL ANZEIGEN`、`VOR-UND NACHNAME`、`PLZ`、`ORT`、`STRASSE`、`NR`、`E-MAIL ADRESSE DES KUNDEN`、`Retouren-Empfänger`。
+
+`PLZ` 为 4 位数字时会自动在最前面补 `0`；补齐后不是 5 位数字的记录不会提交，并会写入错误记录。
 
 ## 快速开始（Windows）
 
