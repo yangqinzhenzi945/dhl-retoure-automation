@@ -34,7 +34,7 @@
 | STRASSE | Straße |
 | NR | Hausnummer |
 | E-MAIL ADRESSE DES KUNDEN | Kunden-E-Mail |
-| Retouren-Empfänger | DHL 账户中的收件方名称 |
+| Retouren-Empfänger | DHL 账户中的收件方名称（如有新收件方，需要联系DHL添加哦） |
 | Sendungsnummer | 输出列；没有时自动创建为 L 列 |
 
 ## 快速开始（Windows）
